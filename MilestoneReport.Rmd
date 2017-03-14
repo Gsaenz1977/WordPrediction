@@ -1,0 +1,285 @@
+---
+title: 'Peer Graded Assignment: Milestone Report'
+author: "Gilberto Saenz"
+date: "February 14, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Milestone Report Objective
+
+The goal of this project is to explain exploratory analysis and goals for an eventual app and algorithm. Briefly summarizes the plans for creating the prediction algorithm and Shiny app in a way that would be understandable to a non-data scientist manager. Tables and plots are used to illustrate important summaries of the data set. 
+
+The motivation for this project is to: 
+1. Download the data and have successfully loaded it in.
+2. Create a basic report of summary statistics about the data sets.
+3. Report any interesting findings.
+
+
+## Getting the Data
+
+The data can be downloaded from this link  (https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip). After downloading, please extract the files to the working directory. 
+
+The source data for this project is a zip file containing three types of sample data - news, blogs and twitter in four languages - English, German, French and Russian.
+
+For this analysis the focus will be for the files in English. The three files are:
+
+* en_US.blogs.txt -- text from blog posts
+* en_US.news.txt -- text from news articles posted online
+* en_US.twitter.txt -- text from tweets on Twitter
+
+The following code downloads the data to the working directory. After that then we just extract the file
+
+```{r}
+setwd("C://Users/gsae9643/Documents/")
+fileUrl <-"https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+if (!file.exists("Coursera-SwiftKey.zip")){
+  download.file(fileUrl, destfile = "Coursera-SwiftKey.zip", method="curl")
+}
+
+```
+
+## Data Cleaning
+
+Fisrts we upload all libraries required during the analysis
+
+```{r}
+library(stringi)
+library(NLP)
+library(tm)
+library(ngram)
+library(RColorBrewer)
+library(wordcloud)
+```
+
+
+Now read the files and check on sizes, just to have an idea how big the files are: 
+```{r}
+# Reads the files
+Blogs <- file("C://Users/gsae9643/Documents/final/en_US/en_US.blogs.txt", "rb")
+Blogs <- readLines(Blogs, encoding = "UTF-8",skipNul = TRUE)
+News <- file("C://Users/gsae9643/Documents/final/en_US/en_US.news.txt", "rb")
+News <- readLines(News, encoding = "UTF-8",skipNul = TRUE)
+Twitter <- file("C://Users/gsae9643/Documents/final/en_US/en_US.twitter.txt", "rb")
+Twitter <- readLines(Twitter, encoding = "UTF-8",skipNul = TRUE)
+
+#Calcultaes the sizes
+BlogSize <- file.info("C://Users/gsae9643/Documents/final/en_US/en_US.blogs.txt")$size / 1024^2
+NewSize <- file.info("C://Users/gsae9643/Documents/final/en_US/en_US.news.txt")$size / 1024^2
+TwitterSize <- file.info("C://Users/gsae9643/Documents/final/en_US/en_US.twitter.txt")$size / 1024^2
+FileSize <- rbind(BlogSize, NewSize, TwitterSize)
+FileSize
+
+```
+
+After that we will do some basic calculation in the loaded files, like to counting the lines and words.
+
+```{r}
+#Counting Lines
+Lenth_Blogs <- length(Blogs)
+Lenth_News <- length(News)
+Lenth_Twitter <- length(Twitter)
+Total_Lines <- rbind(Lenth_Blogs, Lenth_News, Lenth_Twitter)
+Total_Lines
+#Counting Words
+Words_Blogs <- sum(stri_count_words(Blogs))
+Words_News <- sum(stri_count_words(News))
+Words_Twitter <- sum(stri_count_words(Twitter))
+Total_Words <- rbind(Words_Blogs, Words_News, Words_Twitter)
+Total_Words
+```
+
+Since files size is ~800 Mb and total words is ~102.4M in ~4.2M lines, and this will cosume time and machine memory, the best way to analize the data is taking a random sample on lines from each file. In this case, we will use 1% sample size.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(777)
+
+#Gets the sample lines
+Sample_Blogs <- sample(Blogs, Lenth_Blogs*0.01)
+Sample_News <- sample(News, Lenth_News*0.01)
+Sample_Twitter <- sample(Twitter, Lenth_Twitter*0.01)
+mainDir <- "C://Users/gsae9643/Documents/final/en_US/"
+
+#Writes the sample line files in specific directories
+subDir <- "Sample_Blogs"
+
+if (file.exists(subDir)){
+    setwd(file.path(mainDir, subDir))
+} else {
+    dir.create(file.path(mainDir, subDir))
+    setwd(file.path(mainDir, subDir))
+
+}
+writeLines(Sample_Blogs, "C://Users/gsae9643/Documents/final/en_US/Sample_Blogs/Sample_Blogs.txt")
+
+mainDir <- "C://Users/gsae9643/Documents/final/en_US/"
+subDir <- "Sample_News"
+
+if (file.exists(subDir)){
+    setwd(file.path(mainDir, subDir))
+} else {
+    dir.create(file.path(mainDir, subDir))
+    setwd(file.path(mainDir, subDir))
+
+}
+writeLines(Sample_News, "C://Users/gsae9643/Documents/final/en_US/Sample_News/Sample_News.txt")
+
+mainDir <- "C://Users/gsae9643/Documents/final/en_US/"
+subDir <- "Sample_Twitter"
+
+if (file.exists(subDir)){
+    setwd(file.path(mainDir, subDir))
+} else {
+    dir.create(file.path(mainDir, subDir))
+    setwd(file.path(mainDir, subDir))
+
+}
+writeLines(Sample_Twitter, "C://Users/gsae9643/Documents/final/en_US/Sample_Twitter/Sample_Twitter.txt")
+
+```
+
+Now We need to clean the data, removing unnecesary characters, like: 
+
+* symbols
+* numbers
+* punctuation
+* white spaces 
+* stop/unncesary words
+
+```{r}
+
+#Cleans Blogs
+Sample_Blogs <- file.path("C://Users/gsae9643/Documents/final/en_US/Sample_Blogs")
+Sample_Blogs <- Corpus(DirSource(Sample_Blogs)) 
+Sample_Blogs <- tm_map(Sample_Blogs, stripWhitespace)
+Sample_Blogs <- tm_map(Sample_Blogs, tolower)
+Sample_Blogs <- tm_map(Sample_Blogs, removePunctuation)
+Sample_Blogs <- tm_map(Sample_Blogs, removeNumbers)
+Sample_Blogs <- tm_map(Sample_Blogs, stemDocument)
+Sample_Blogs <- tm_map(Sample_Blogs, removeWords, stopwords("english"))
+Sample_Blogs <- tm_map(Sample_Blogs, PlainTextDocument)
+
+#Cleans News
+Sample_News <- file.path("C://Users/gsae9643/Documents/final/en_US/Sample_News")
+Sample_News <- Corpus(DirSource(Sample_News)) 
+Sample_News <- tm_map(Sample_News, stripWhitespace)
+Sample_News <- tm_map(Sample_News, tolower)
+Sample_News <- tm_map(Sample_News, removePunctuation)
+Sample_News <- tm_map(Sample_News, removeNumbers)
+Sample_News <- tm_map(Sample_News, stemDocument)
+Sample_News <- tm_map(Sample_News, removeWords, stopwords("english"))
+Sample_News <- tm_map(Sample_News, PlainTextDocument)
+
+#Cleans Twitter
+Sample_Twitter <- file.path("C://Users/gsae9643/Documents/final/en_US/Sample_Twitter")
+Sample_Twitter <- Corpus(DirSource(Sample_Twitter)) 
+Sample_Twitter <- tm_map(Sample_Twitter, stripWhitespace)
+Sample_Twitter <- tm_map(Sample_Twitter, tolower)
+Sample_Twitter <- tm_map(Sample_Twitter, removePunctuation)
+Sample_Twitter <- tm_map(Sample_Twitter, removeNumbers)
+Sample_Twitter <- tm_map(Sample_Twitter, stemDocument)
+Sample_Twitter <- tm_map(Sample_Twitter, removeWords, stopwords("english"))
+Sample_Twitter <- tm_map(Sample_Twitter, PlainTextDocument)
+```
+
+## Exploratory Data Analysis
+
+Now that the data is clean for every data set Blogs, News and Tweeter the following info will be display:
+
+* Top 15 most used words
+* Word Cloud (100 words)
+* Top 15 2-gram (Table and Barchart)
+* Top 15 3-gram (Table and Barchart)
+
+```{r echo=FALSE}
+
+#Counts the words
+Blogs_Word_Count <- head(sort(rowSums(as.matrix(TermDocumentMatrix(Sample_Blogs))),decreasing=TRUE), 15)
+News_Word_Count <- head(sort(rowSums(as.matrix(TermDocumentMatrix(Sample_News))),decreasing=TRUE), 15)
+Twitter_Word_Count <- head(sort(rowSums(as.matrix(TermDocumentMatrix(Sample_Twitter))),decreasing=TRUE), 15)
+
+#Creates a String and gets de n-grams
+Sample_Blogs<-concatenate(Sample_Blogs)
+Sample_Blogs<- preprocess (Sample_Blogs,remove.punct = TRUE,remove.numbers = TRUE)
+Sample_Blogs_ngram2 <- ngram (Sample_Blogs,n=2)
+Sample_Blogs_ngram3 <- ngram (Sample_Blogs,n=3)
+
+Sample_News<-concatenate(Sample_News)
+Sample_News<- preprocess (Sample_News,remove.punct = TRUE,remove.numbers = TRUE)
+Sample_News_ngram2 <- ngram (Sample_News,n=2)
+Sample_News_ngram3 <- ngram (Sample_News,n=3)
+
+Sample_Twitter<-concatenate(Sample_Twitter)
+Sample_Twitter<- preprocess (Sample_Twitter,remove.punct = TRUE,remove.numbers = TRUE)
+Sample_Twitter_ngram2 <- ngram (Sample_Twitter,n=2)
+Sample_Twitter_ngram3 <- ngram (Sample_Twitter,n=3)
+```
+
+### Blogs
+
+```{r echo=FALSE}
+
+barplot(Blogs_Word_Count, 
+        main = "Top 15 words from Blogs Data", 
+        xlab="Word", 
+        ylab = "Count")
+
+wordcloud(Sample_Blogs, max.words = 100, random.order = FALSE, rot.per = 0.35, use.r.layout = TRUE, colors = brewer.pal(8, "Dark2"))
+
+head(get.phrasetable(Sample_Blogs_ngram2),15)
+Sample_Blogs_ngram2<-head(get.phrasetable(Sample_Blogs_ngram2),15)
+barplot(Sample_Blogs_ngram2$freq,names.arg = Sample_Blogs_ngram2$ngrams,las=2, main = "Top 15 2-grams from Blogs Data")
+head(get.phrasetable(Sample_Blogs_ngram3),15)
+Sample_Blogs_ngram3<-head(get.phrasetable(Sample_Blogs_ngram3),15)
+barplot(Sample_Blogs_ngram3$freq,names.arg = Sample_Blogs_ngram3$ngrams,las=2, main = "Top 15 3-grams from Blogs Data")
+```
+
+## News
+
+```{r echo=FALSE}
+
+barplot(News_Word_Count, 
+        main = "Top 15 words from News Data", 
+        xlab="Word", 
+        ylab = "Count")
+
+wordcloud(Sample_News, max.words = 100, random.order = FALSE, rot.per = 0.35, use.r.layout = TRUE, colors = brewer.pal(8, "Dark2"))
+
+head(get.phrasetable(Sample_News_ngram2),15)
+Sample_News_ngram2<-head(get.phrasetable(Sample_News_ngram2),15)
+barplot(Sample_News_ngram2$freq,names.arg = Sample_News_ngram2$ngrams,las=2, main = "Top 15 2-grams from News Data")
+head(get.phrasetable(Sample_News_ngram3),15)
+Sample_News_ngram3<-head(get.phrasetable(Sample_News_ngram3),15)
+barplot(Sample_News_ngram3$freq,names.arg = Sample_News_ngram3$ngrams,las=2, main = "Top 15 3-grams from News Data")
+
+```
+
+## Twitter
+
+```{r echo=FALSE}
+
+barplot(Twitter_Word_Count, 
+        main = "Top 15 words from Blogs Data", 
+        xlab="Word", 
+        ylab = "Count")
+
+wordcloud(Sample_Twitter, max.words = 100, random.order = FALSE, rot.per = 0.35, use.r.layout = TRUE, colors = brewer.pal(8, "Dark2"))
+
+head(get.phrasetable(Sample_Twitter_ngram2),15)
+Sample_Twitter_ngram2<-head(get.phrasetable(Sample_Twitter_ngram2),15)
+barplot(Sample_Twitter_ngram2$freq,names.arg = Sample_Twitter_ngram2$ngrams,las=2, main = "Top 15 3-grams from Twitter Data")
+head(get.phrasetable(Sample_Twitter_ngram3),15)
+Sample_Twitter_ngram3<-head(get.phrasetable(Sample_Twitter_ngram3),15)
+barplot(Sample_Twitter_ngram3$freq,names.arg = Sample_Twitter_ngram3$ngrams,las=2, main = "Top 15 3-grams from Twitter Data")
+
+```
+
+##Prediction Algorithm and Shiny App Plan
+
+Exploratory analysis is showing that the n-grams is a potential strategy for the prediction algorithm.  
+
+The Shiny app should be a simple user interface for the user to enter text into a  textbox, and the the algorithm will provide potential suggestions for the next word. To enhance the user experience a simplified approach will be used
+
